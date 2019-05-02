@@ -1,6 +1,6 @@
 # BenthicSpeciesDetector
 A shape detector for the 2019 MATE underwater robotics competition.
-![Benthic Species Detector][logo.png]
+![Benthic Species Detector](https://github.com/michaudcordell/BenthicSpeciesDetector/blob/master/logo.png)
 
 ## Table of Contents
 * [Overview](#overview)
