@@ -53,7 +53,7 @@ A BenthicSpeciesDetector object can be created by calling the constructor and su
 * The ```shape_alpha``` value; the maximum percent difference from ideal shape characteristics when testing considered shapes
 * The ```corner_min_distance``` value; the minimum distance (in pixels) two points must be from each other to be considered dissimilar when filtering
 ```python
-detector = BenthicSpeciesDetector(rect_similarity_alpha=0.1, rect_enclosure_alpha=0.1, shape_alpha=0.1,   corner_min_distance=10)
+detector = BenthicSpeciesDetector(rect_similarity_alpha=0.1, rect_enclosure_alpha=0.1, shape_alpha=0.1, corner_min_distance=10)
 ```
 
 ### Modifying attributes
