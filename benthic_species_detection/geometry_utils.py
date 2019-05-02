@@ -1,4 +1,5 @@
-#!/usr/bin/env python3
+#!/u#!/usr/bin/env python3
+import numpy as np
 
 """
 This module contains methods for certain geometric calculations needed by the Benthic Species Detector.
@@ -26,6 +27,96 @@ def point_enclosed(point, rect):
         enclosed = True
 
     return enclosed
+
+def scale_point(point, width, height, width_scaling, height_scaling):
+    """
+    Scale a point from a reference rectangle to a scaled version of the reference rectangle.
+
+    :param point: the point (x, y) to be scaled
+    :type point: tuple
+    :param width: the width of the point's reference rectangle
+    :type width: int
+    :param height: the height of the point's reference rectangle
+    :type height: int
+    :param width_scaling: the factor by which to scale the width
+    :type width_scaling: float
+    :param height_scaling: the factor by which to scale the height
+    :type height_scaling: float
+    :return: the point (x, y) scaled within the scaled rectangle
+    """
+
+    (x, y) = point
+    scaled_width = int(np.round(width * width_scaling))
+    scaled_height = int(np.round(height * height_scaling))
+    scaled_x = int(np.round((x / width) * scaled_width))
+    scaled_y = int(np.round((y / height) * scaled_height))
+    scaled_point = (scaled_x, scaled_y)
+
+    return scaled_point
+
+def recontextualize_rect(rect, context_width, context_height, width_scaling, height_scaling):
+    """
+    Scale a rectangle proportionally from one rectangular context to a scaled version of the original.
+
+    :param rect: a rectangle of the form (x_top_left, y_top_left, width, height)
+    :type rect: tuple
+    :param context_width: the width of the original context
+    :type context_width: int
+    :param context_height: the height of the original context
+    :type context_height: int
+    :param width_scaling: the factor by which to scale the width of the context
+    :type width_scaling: float
+    :param height_scaling: the factor by which to scale the height of the context
+    :type height_scaling: float
+    :return: a rectangle (x_top_left, y_top_left, width, height) proportionally scaled and positioned in the new
+             context
+    """
+
+    (x, y, rect_width, rect_height) = rect
+    scaled_context_width = int(np.round(context_width * width_scaling))
+    scaled_context_height = int(np.round(context_height * height_scaling))
+    (scaled_x, scaled_y) = scale_point((x, y), context_width, context_height, width_scaling, height_scaling)
+    scaled_rect_width = int(np.round((rect_width / context_width) * scaled_context_width))
+    scaled_rect_height = int(np.round((rect_height / context_height) * scaled_context_height))
+
+    scaled_rect = (scaled_x, scaled_y, scaled_rect_width, scaled_rect_height)
+    return scaled_rect
+
+def filter_similar_points(point_list, distance_threshold=10):
+    """
+    Filter a list of points such that no point is within distance_threshold pixels from another.
+
+    :param point_list: a list of points to filter through based on similarity
+    :type point_list: list
+    :param distance_threshold: the minimum distance two points must be from each other to be considered dissimilar
+                               (10 pixels by default)
+    :type distance_threshold: int
+    :return: a list of points filtered by distance to each other
+    """
+
+    points_to_process = point_list.copy()
+    pivot = 0
+    while pivot + 1 < len(points_to_process):
+        scan = len(points_to_process) - 1
+        while scan > pivot:
+            distance = euclideanDistance(points_to_process[pivot], points_to_process[scan])
+            if distance < distance_threshold:
+                points_to_process[scan] = midpoint(points_to_process[pivot], points_to_process[scan])
+                # now remove pivot
+                if pivot == 0:
+                    points_to_process = points_to_process[pivot + 1:]
+                    scan -= 1
+                else:
+                    points_to_process_new = list(points_to_process[:pivot])
+                    points_to_process_right = list(points_to_process[pivot + 1:])
+                    points_to_process_new.extend(points_to_process_right)
+                    points_to_process = points_to_process_new
+                    scan -= 1
+            else:
+                scan -= 1
+        pivot += 1
+
+    return points_to_process
 
 def euclidean_distance(point1, point2):
     """
@@ -155,6 +246,64 @@ def rect_compare(rect1, rect2):
 
     comparison = (containment, similarity)
     return comparison
+
+def filter_similar_rects(rects_list, cap, similarity_alpha=0.1, enclosure_alpha=0.1):
+    """
+    Filter a list of rects such that none of the rects are too similar within a percent difference similarity_alpha
+        or unenclosed by less than a percentage enclosure_alpha
+
+    :param rects_list: a list of rects to filter by similarity and containment
+    :type rects_list: list
+    :param cap: the maximum number of rects to process
+    :type cap: int
+    :param similarity_alpha: the minimum percent difference required for the rectangles to be considered dissimilar
+                             (0.1 by default)
+    :type similarity_alpha: float
+    :param enclosure_alpha: the minimum percent unenclosed required for a rectangle to be considered unenclosed
+                              by another rectangle (0.1 by default)
+    :type enclosure_alpha: float
+    :return: a list of rects filtered such that no rects are too similar and none are contained by another
+    """
+
+    if cap < len(rects_list):
+        rects_to_process = rects_list[:cap]
+    else:
+        rects_to_process = rects_list[:]
+
+    pivot = 0
+
+    while pivot + 1 < len(rects_to_process):
+        scan = len(rects_to_process) - 1
+        while scan > pivot:
+            rect_comparison = rectCompare(rects_to_process[pivot], rects_to_process[scan])
+            contains = True if rect_comparison[0] > (1 - enclosure_alpha) else False
+            contained = True if rect_comparison[0] < -(1 - enclosure_alpha) else False
+            rect_sim = rect_comparison[1] > (1 - similarity_alpha)
+            if contained:
+                if pivot > 0:
+                    rects_to_process = np.vstack((rects_to_process[:pivot], rects_to_process[pivot + 1:]))
+                else:
+                    rects_to_process = rects_to_process[1:]
+                scan = len(rects_to_process) - 1
+            elif contains:
+                if scan + 1 < len(rects_to_process):
+                    rects_to_process = np.vstack((rects_to_process[:scan], rects_to_process[scan + 1:]))
+                else:
+                    rects_to_process = rects_to_process[:scan]
+                scan -= 1
+            else:
+                if rect_sim >= 1 - similarity_alpha:
+                    if pivot > 0:
+                        rects_to_process = np.vstack((rects_to_process[:pivot], rects_to_process[pivot + 1:]))
+                    else:
+                        rects_to_process = rects_to_process[1:]
+                    scan = len(rects_to_process) - 1
+                else:
+                    scan -= 1
+
+        pivot += 1
+
+    return rects_to_process
 
 def find_adjacent_corners(corner, other_corners):
     """

@@ -8,8 +8,31 @@ import geometry_utils as geomutils
 class BenthicSpeciesDetector:
     """
     This is a class to detect particular shapes in an image corresponding to the Benthic Species outlined in the
-        MATE 2019 mission manual.
+        MATE 2019 ROV competition mission manual.
     """
+
+    def __init__(self, rect_similarity_alpha=0.1, rect_enclosure_alpha=0.1, shape_alpha=0.1, corner_min_distance=10):
+        """
+        Construct an instance of the BenthicSpeciesDetector.
+
+        :param rect_similarity_alpha: the minimum percent difference required for the rectangles to be considered
+                                      dissimilar (0.1 by default)
+        :type rect_similarity_alpha: float
+        :param rect_enclosure_alpha: the minimum percent unenclosed required for a rectangle to be considered
+                                       unenclosed by another rectangle (0.1 by default)
+        :type rect_enclosure_alpha: float
+        :param shape_alpha: the maximum percent difference from ideal shape characteristics for the shape tests
+                            (0.1 by default)
+        :type shape_alpha: float
+        :param corner_min_distance: the minimum distance two points must be from each other to be considered dissimilar
+                                   (10 pixels by default)
+        :type corner_min_distance: int
+        """
+
+        self.rect_similarity_alpha = rect_similarity_alpha
+        self.rect_enclosure_alpha = rect_enclosure_alpha
+        self.shape_alpha = shape_alpha
+        self.corner_min_distance = corner_min_distance
 
     class ShapeType(Enum):
         """
@@ -20,103 +43,8 @@ class BenthicSpeciesDetector:
         square = 3
         circle = 4
 
-    @classmethod
-    def _filter_similar_points(cls, point_list, distance_threshold=5):
-        """
-        Filter a list of points such that no point is within distance_threshold pixels from another.
-
-        :param point_list: a list of points to filter through based on similarity
-        :type point_list: list
-        :param distance_threshold: the minimum distance two points must be from each other to be considered dissimilar
-                                   (5 pixels by default)
-        :type distance_threshold: int
-        :return: a list of points filtered by distance to each other
-        """
-
-        points_to_process = point_list.copy()
-        pivot = 0
-        while pivot + 1 < len(points_to_process):
-            scan = len(points_to_process) - 1
-            while scan > pivot:
-                distance = euclideanDistance(points_to_process[pivot], points_to_process[scan])
-                if distance < distance_threshold:
-                    points_to_process[scan] = midpoint(points_to_process[pivot], points_to_process[scan])
-                    # now remove pivot
-                    if pivot == 0:
-                        points_to_process = points_to_process[pivot + 1:]
-                        scan -= 1
-                    else:
-                        points_to_process_new = list(points_to_process[:pivot])
-                        points_to_process_right = list(points_to_process[pivot + 1:])
-                        points_to_process_new.extend(points_to_process_right)
-                        points_to_process = points_to_process_new
-                        scan -= 1
-                else:
-                    scan -= 1
-            pivot += 1
-
-        return points_to_process
-
-    @classmethod
-    # filter out bounding boxes that are too close to each other or are mostly contained within another bounding box
-    def _filter_similar_rects(cls, rects_list, cap, similarity_alpha=0.10, containment_alpha=0.10):
-        """
-        Filter a list of rects such that none of the rects are too similar within a percent difference similarity_alpha
-            or unenclosed by less than a percentage containment_alpha
-
-        :param rects_list: a list of rects to filter by similarity and containment
-        :type rects_list: list
-        :param cap: the maximum number of rects to process
-        :type cap: int
-        :param similarity_alpha: (0.1 by default)
-        :type similarity_alpha: float
-        :param containment_alpha: (0.1 by default)
-        :type containment_alpha: float
-        :return: a list of rects filtered such that no rects are too similar and none are contained by another
-        """
-
-        if cap < len(rects_list):
-            rects_to_process = rects_list[:cap]
-        else:
-            rects_to_process = rects_list[:]
-
-        pivot = 0
-
-        while pivot + 1 < len(rects_to_process):
-            scan = len(rects_to_process) - 1
-            while scan > pivot:
-                rect_comparison = rectCompare(rects_to_process[pivot], rects_to_process[scan])
-                contains = True if rect_comparison[0] > (1 - containment_alpha) else False
-                contained = True if rect_comparison[0] < -(1 - containment_alpha) else False
-                rect_sim = rect_comparison[1] > (1 - similarity_alpha)
-                if contained:
-                    if pivot > 0:
-                        rects_to_process = np.vstack((rects_to_process[:pivot], rects_to_process[pivot + 1:]))
-                    else:
-                        rects_to_process = rects_to_process[1:]
-                    scan = len(rects_to_process) - 1
-                elif contains:
-                    if scan + 1 < len(rects_to_process):
-                        rects_to_process = np.vstack((rects_to_process[:scan], rects_to_process[scan + 1:]))
-                    else:
-                        rects_to_process = rects_to_process[:scan]
-                    scan -= 1
-                else:
-                    if rect_sim >= 1 - similarity_alpha:
-                        if pivot > 0:
-                            rects_to_process = np.vstack((rects_to_process[:pivot], rects_to_process[pivot + 1:]))
-                        else:
-                            rects_to_process = rects_to_process[1:]
-                        scan = len(rects_to_process) - 1
-                    else:
-                        scan -= 1
-
-            pivot += 1
-
-        return rects_to_process
-
-    @classmethod
-    def _ellipse_score(cls, shapeimg, corners):
+    @staticmethod
+    def _ellipse_score(shapeimg, corners):
         """
         Test how likely it is that the shape to test is an ellipse.
 
@@ -146,8 +74,8 @@ class BenthicSpeciesDetector:
 
         return score
 
-    @classmethod
-    def _triangle_score(cls, corners):
+    @staticmethod
+    def _triangle_score(corners):
         """
         Test how likely it is that the shape to test is a triangle.
 
@@ -166,8 +94,8 @@ class BenthicSpeciesDetector:
 
         return score
 
-    @classmethod
-    def _rectangle_score(cls, corners):
+    @staticmethod
+    def _rectangle_score(corners):
         """
         Test how likely it is that the shape to test is a rectangle.
 
@@ -186,8 +114,8 @@ class BenthicSpeciesDetector:
 
         return score
 
-    @classmethod
-    def _square_score(cls, corners):
+    @staticmethod
+    def _square_score(corners):
         """
         Test how likely it is that the shape to test is a square.
 
@@ -209,8 +137,8 @@ class BenthicSpeciesDetector:
 
         return score
 
-    @classmethod
-    def _classify_shape(cls, shapeimg, corners, alpha=0.1):
+    @staticmethod
+    def _classify_shape(shapeimg, corners, shape_alpha=0.1):
         """
         Classify the shape bounded in shapeimg and specified by the corners in the list parameter corners.
 
@@ -218,8 +146,9 @@ class BenthicSpeciesDetector:
         :type shapeimg: numpy.ndarray
         :param corners: a list of the corners bounded within the portion of the image
         :type corners: list
-        :param alpha: the maximum percent difference from ideal shape for the shape tests (0.1 by default)
-        :type alpha: float
+        :param shape_alpha: the maximum percent difference from ideal shape characteristics for the shape tests
+                            (0.1 by default)
+        :type shape_alpha: float
         :return: the most probable shape for the provided shape, of the form (shape_type, score) where
                   shape_type is the detected ShapeType and
                   score is the percent confidence that the detected shape is of this type,
@@ -231,7 +160,7 @@ class BenthicSpeciesDetector:
                   (ShapeType.rectangle, _rectangle_score(corners)),
                   (ShapeType.square, _square_score(corners))]
 
-        filtered_scores = list(filter(lambda score_info: score_info[1] >= 1 - alpha, scores))
+        filtered_scores = list(filter(lambda score_info: score_info[1] >= 1 - shape_alpha, scores))
         if len(filtered_scores) != 0:
             filtered_scores.sort(key=lambda score_info: score_info[1])
 
@@ -239,7 +168,7 @@ class BenthicSpeciesDetector:
                 square_sufficient = False
                 square_index = -1
                 for index in range(0, len(filtered_scores)):
-                    if (filtered_scores[index][0] == ShapeType.square) and (filtered_scores[index][1] >= 1 - alpha):
+                    if (filtered_scores[index][0] == ShapeType.square) and (filtered_scores[index][1] >= 1 - shape_alpha):
                         square_sufficient = True
                         square_index = index
                         break
@@ -254,8 +183,7 @@ class BenthicSpeciesDetector:
 
         return most_probable
 
-    @classmethod
-    def process(cls, image, image_scaling_factor=0.5, debug=False, alphas=(0.10, 0.10)):
+    def process(self, image, image_scaling_factor=0.5, debug=False):
         """
         Process an image to detect shapes present in it.
 
@@ -267,10 +195,6 @@ class BenthicSpeciesDetector:
         :param debug: a boolean which determines whether debug information should be displayed (intermediate region
                       proposals, corners, and shapes) (False by default)
         :type debug: bool
-        :param alphas: a tuple of the form (rect_alpha, shape_alpha), where rect_alpha is the maximum percent dissimilarity
-                       for rectangle similarity and shape_alpha is the maximum percent difference from ideal shape for the
-                       shape tests ((0.1, 0.1) by default)
-        :type alphas: tuple
         :return: a list of detected shapes of the form ((x, y, w, h), (shape_type, confidence)) where
                   (x, y, w, h) is the bounding rectangle of the shape,
                   shape_type is the ShapeType of the shape,
@@ -307,10 +231,10 @@ class BenthicSpeciesDetector:
 
         # filter the bounding boxes by similarity and enclosure
         rects_cap = 150
-        rect_alpha = alphas[0]  # filter by similarity >= 90%
 
         # filter rects
-        filtered_rects = _filter_similar_rects(rects, rects_cap, rect_alpha)
+        filtered_rects = geomutils.filter_similar_rects(rects, rects_cap, similarity_alpha=self.rect_similarity_alpha,
+                                               enclosure_alpha=self.rect_enclosure_alpha)
         if debug:
             print("Number of rects after similarity filtering: {0}".format(len(filtered_rects)))
             print("Filtered rects: {0}".format(filtered_rects))
@@ -329,7 +253,7 @@ class BenthicSpeciesDetector:
         # define the criteria to stop and refine the corners
         criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 100, 0.001)
         corners = cv.cornerSubPix(gray, np.float32(centroids), (5, 5), (-1, -1), criteria)
-        corners = _filter_similar_points(corners, distance_threshold=10)
+        corners = geomutils.filter_similar_points(corners, distance_threshold=self.corner_min_distance)
 
         corners_by_rect = []
         for rect_index in range(0, len(filtered_rects)):
@@ -350,10 +274,10 @@ class BenthicSpeciesDetector:
 
         # classify and score detected shapes
         shapes_list = []
-        shape_alpha = alphas[1]
         for rect_index in range(0, len(filtered_rects)):
             (x, y, w, h) = filtered_rects[rect_index]
-            shape_score = _classify_shape(image[y:y + h, x:x + w], corners_by_rect[rect_index], alpha=shape_alpha)
+            shape_score = _classify_shape(image[y:y + h, x:x + w], corners_by_rect[rect_index],
+                                          shape_alpha=self.shape_alpha)
             if debug:
                 print("Rect Index: {0}, Location: {1}\nCorners: {2}\nShape score: {3}\n\n".format(
                     str(rect_index),
@@ -421,4 +345,9 @@ class BenthicSpeciesDetector:
                     break
 
             cv.destroyAllWindows()
+
+        return list(map(lambda shape_info: (geomutils.recontextualize_rect(shape_info[0], resized_width, resized_height,
+                                                                           1 / image_scaling_factor,
+                                                                           1 / image_scaling_factor), shape_info[1]),
+                                                                           shapes_list))
 
